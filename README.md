@@ -4,7 +4,7 @@ This package provides a toy model for stochastic CA for microstructure evolution
 
 **Please note that this will only work on devices with AMD GPUs**. 
 
-<iframe width="560" height="315" src="https://youtu.be/2Z2rwcoDvuE" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+[![Benchmark simulation example](https://img.youtube.com/vi/2Z2rwcoDvuE/0.jpg)](https://www.youtube.com/watch?v=2Z2rwcoDvuE)
 
 It leverages `AMDGPU.jl` via custom kernels to do CA simulations in as little as 7 seconds for 1000x1000 domains over >30 minutes of simulated process. 
 
