@@ -1,7 +1,10 @@
 # A gpu-accelerated stochastic cellular automata model of microstructure development
 
-This package provides a toy model for stochastic CA for microstructure evolution during arbitrary thermal processing. Please note that this will only work on 
-devices with AMD GPUs. It leverages `AMDGPU.jl` via custom kernels to do CA simulations in as little as 7 seconds for 1000x1000 domains over >30 minutes of simulated process. 
+This package provides a toy model for stochastic CA for microstructure evolution during arbitrary thermal processing. 
+
+**Please note that this will only work on devices with AMD GPUs**. 
+
+It leverages `AMDGPU.jl` via custom kernels to do CA simulations in as little as 7 seconds for 1000x1000 domains over >30 minutes of simulated process. 
 
 Please see the attached report for the theory behind the model. 
 
