@@ -26,6 +26,7 @@ S_init,                 # An NxM array of touples, where each touple contains th
 t_array,                # A vector with points in time where the model will be forced to evaluate and save results
 T_func,                 # A function that determines the temperature (in Kelvin) for any point in time
 params;                 # A `SimParams` struct that contains parameters like mobility and acitvation energy (see below)
+Δt_floor=1f-6           # Smallest allowable time step (prevents the simulation time from exploding if kinetics are too fast)
 plot_every=10,          # An option that tells the simulation how frequently it should save a frame for a video (i.e. every 10 macro-steps by default)
 record_video=true,      # If disabled, no plotting will be done but microstructure stats will still be saved (massive performance boost)
 show_debug_stats=false, # Will print some info regarding max free energy etc if enables
