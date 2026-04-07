@@ -25,6 +25,7 @@ struct SimParams
     θ_threshold::Float32
     M_GB_multiplier::Float32
 end
+export SimParams
 
 default_params = SimParams(
     0.1f0,
@@ -634,6 +635,7 @@ function track_state_over_time_gpu(S_init, t_array, T_func, params::SimParams ;
     end
     return Array(S_d1), results
 end
+export track_state_over_time_gpu
 
 function tuple_to_rgb(state::Tuple{Int32, Int32})
     θ, p = state
@@ -646,6 +648,7 @@ function tuple_to_rgb(state::Tuple{Int32, Int32})
         return HSV(200.0f0 + norm_θ * 60.0f0, 0.8f0, 0.9f0) 
     end
 end
+export tuple_to_rgb
 
 # instantiate a frame with random orientation for every pixel
 function instantiate_random_microstructure(N, M)
@@ -695,11 +698,12 @@ end
 function thermal_cycle_func(t; T_max = (780+273), T_min = 500 + 273, period = 900)::Float32
     return ((T_max - T_min) * cos(t/period * 2π) + (T_max + T_min))/2
 end
+export thermal_cycle_func
 
 
 # Generates a vornoi diagram type of microstructure with num_grains seeds
 function initialize_real_microstructure(N::Int, M::Int, num_grains::Int; phase=1)
-    # Initialize an empty host array with your precise Tuple types
+    # Initialize an empty host array
     S_init = Array{Tuple{Int32, Int32}}(undef, N, M)
     
     # 1. Generate random coordinates for the grain "seeds"
@@ -707,7 +711,6 @@ function initialize_real_microstructure(N::Int, M::Int, num_grains::Int; phase=1
     seed_y = rand(1:M, num_grains)
     
     # 2. Assign a random orientation (0, 10, ..., 90) and Phase 1 (Ferrite) to each seed
-    # You can change rand(0:10:90) if you ever want continuous orientations
     seed_states = [(Int32(rand(0:10:90)), Int32(phase)) for _ in 1:num_grains]
     
     # 3. Populate the grid using the closest seed 
@@ -742,6 +745,7 @@ function initialize_real_microstructure(N::Int, M::Int, num_grains::Int; phase=1
     
     return S_init
 end
+export initialize_real_microstructure
 
 function compute_local_stats_kernel!(S, f_count, pb_count, gb_count)
     i = workitemIdx().x + (workgroupIdx().x - 1) * workgroupDim().x
@@ -792,13 +796,11 @@ function plot_simulation_results(csv_path::String)
     # Read the data, separating the header row from the actual numbers
     data, header = readdlm(csv_path, ',', header=true)
     
-    # Extract the columns based on the 
     time_s = Float32.(data[:, 1])
     temp_C = Float32.(data[:, 2])
     ferrite_frac = Float32.(data[:, 3])
     avg_diameter = Float32.(data[:, 5])
     
-    # --- Visualization Setup ---
     f = Figure(size = (1600, 600))
     
     # Axis 1: The JMAK S-Curve (Volume Fraction)
@@ -827,7 +829,6 @@ function plot_simulation_results(csv_path::String)
     
     #display(f)
     
-    # --- Save the High-Resolution PNG ---
     # 1. Extract the folder path from the CSV path
     out_dir = dirname(csv_path)
     
@@ -898,5 +899,5 @@ function plot_temperature_dependence(csv_path::String)
     return f
 end
 
-end # module kmc_gpu
+end
 
