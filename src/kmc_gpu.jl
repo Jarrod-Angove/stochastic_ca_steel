@@ -98,29 +98,9 @@ end
 # Convert to a fixed-size Tuple of Tuples for the GPU
 const POSSIBLE_STATES = Tuple((Int32(θ), Int32(p)) for θ in 0:10:90 for p in 0:1)
 
-#const Q_mobility = 1.7e5    # Activation energy for boundary mobility (J/mol)
-#const M_0 = 2.0f-4          # Pre-exponential mobility factor (m^4 / (J*s))
 function get_M(T::Float32, params::SimParams)
-
-    #l = params.l
-
-    # 1. Get driving force in eV / um^3
-    #dG_vol_eV = abs(gibbs_ferrite(T) - gibbs_austenite(T)) 
-    
-    # 2. Convert to SI units (J / m^3) for the mobility equation
-    # 1 eV/um^3 = 0.160218 J/m^3
-    #dG_vol_SI = dG_vol_eV * 0.160218f0 
-    
-    # 3. Calculate physical mobility (m^4 / (J*s))
+    # Calculate physical mobility (m^4 / (J*s))
     mobility = params.M_0 * exp(-params.Q_mobility / (R_gas * T))
-    
-    # 4. Calculate target velocity in SI units (m/s)
-    #v_target_SI = mobility * dG_vol_SI
-    
-    # 5. Convert velocity to microns/sec (um/s) so it matches your grid
-    #v_target_um = v_target_SI * 1.0f6
-    
-    # 6. Return attempt frequency (v / l) where l is in microns
     return mobility
 end
 
@@ -178,9 +158,8 @@ function kmc_kernel!(S_new, S_old, R_matrix, Δt::Float32, T::Float32,
                 # In a macroscopic CA, boundaries only move if there is a thermodynamic driving force.
                 # (Thermal fluctuations against the gradient are negligible at the micron scale).
                 if ΔE < 0.0f0
-                    # 1. Deterministic Velocity (v = M * Driving Force)
                     driving_force = -ΔE
-                    # 1. Determine if the voxel (θ, p) being consumed sits on a grain boundary 
+                    # Determine if the voxel (θ, p) being consumed sits on a grain boundary 
                     # of its OWN current phase. 
                     is_on_GB = false
                     θ_HA = params.θ_threshold # only high angle GBs are considered GBs
@@ -192,15 +171,15 @@ function kmc_kernel!(S_new, S_old, R_matrix, Δt::Float32, T::Float32,
                         is_on_GB = true
                     end
 
-                    # 2. Apply the global kinetic multiplier to the mobility
+                    # Apply the global kinetic multiplier to the mobility
                     mobility = get_M(T, params)
                     if is_on_GB
                         mobility *= params.M_GB_multiplier 
                     end
 
-                    # 3. Calculate the new, anisotropically-driven velocity
+                    # Calculate the new, anisotropically-driven velocity
                     v = mobility * driving_force * 0.160218f6
-                    # 2. Macroscopic Capture Probability
+                    # Macroscopic Capture Probability
                     P_capture = (v * Δt) / l
                     
                     # Add this specific boundary's pull to the cumulative probability
@@ -247,19 +226,14 @@ function nucleate_kernel!(S, R_probs, R_seeds, Δt::Float32, T::Float32,
         # Ensure the random orientation maps to 0, 10, ..., 90 degree states
         new_θ = Int32((R_seeds[i, j] % 10) * 10) 
 
-        # Calculate the strict thermodynamic energy change
+        # Calculate the thermodynamic energy change
         E_old = total_vox_energy(T, θ, p, θ_n, p_n, params)
         E_new = total_vox_energy(T, new_θ, new_p, θ_n, p_n, params)
         ΔE = E_new - E_old
 
-        # Calculate the probability of this nucleation event occurring
-        #base_rate = nu * exp(-Q_nuc * inv_kBT)
-        
-        # Metropolis probability: heavily penalizes nucleation in the bulk, 
-        # but allows it on boundaries where ΔE is smaller or negative
         metropolis_prob = ifelse(ΔE <= 0.0f0, 1.0f0, exp(-ΔE * inv_kBT))
         
-        # K_NUC is now purely an attempt frequency multiplier for spontaneous structural fluctuations
+        # K_NUC is an attempt frequency multiplier for spontaneous structural fluctuations
         freq = get_M(T, params) * abs(ΔE)/params.l  * 0.160218f6
         rate = params.K_nuc * freq * metropolis_prob
         P_trans = 1.0f0 - exp(-rate * Δt)
@@ -298,7 +272,7 @@ function find_max_velocity_kernel!(V_gpu, S_old, T::Float32, params::SimParams)
         
         local_max_v = 0.0f0
         
-# --- GENERALIZED GB DETECTION ---
+        # --- GB DETECTION ---
         is_on_GB = false
         if (pl == p && abs(θ - θl) > Int32(0)) ||
            (pt == p && abs(θ - θt) > Int32(0)) ||
@@ -328,14 +302,12 @@ function find_max_velocity_kernel!(V_gpu, S_old, T::Float32, params::SimParams)
             end
         end
         
-# --- THE HIGH-PERFORMANCE FLOAT ATOMIC TRICK ---
+        # --- THE HIGH-PERFORMANCE FLOAT ATOMIC TRICK ---
         # Only attempt a memory write if the pixel is actively moving.
         # This drastically reduces atomic contention down to just the active phase boundaries.
         if local_max_v > 0.0f0
             # Reinterpret the Float32 bits as UInt32 to use hardware integer atomics
             val_uint = reinterpret(UInt32, local_max_v)
-            
-            # Use the modern AMDGPU macro syntax instead of the deprecated pointer function
             AMDGPU.@atomic max(V_gpu[1], val_uint)
         end
     end
@@ -359,14 +331,14 @@ function track_state_over_time_gpu(S_init, t_array, T_func, params::SimParams ;
     end
 
     if ! benchmark
-        # --- 1. Create Output Directory ---
+        # --- Create Output Directory ---
         timestamp = Dates.format(Dates.now(), "yyyy-mm-dd_HHMMSS")
         out_dir = "sim_results_$timestamp"
         video_filename = "simulation_$timestamp.webm"
         mkpath(out_dir)
         println("Created output directory: $out_dir")
 
-        # --- 2. Save Simulation Parameters to CSV ---
+        # --- Save Simulation Parameters to CSV ---
         params_file = joinpath(out_dir, "parameters.csv")
         open(params_file, "w") do io
             write(io, "Parameter,Value\n")
@@ -391,7 +363,6 @@ function track_state_over_time_gpu(S_init, t_array, T_func, params::SimParams ;
         inst_T = Observable(T_func(t_array[1]) - 273.0f0)
         inst_time = Observable(Float32(t_array[1])) 
         my_safe_t = Observable(Float32(t_array[2] - t_array[1]))
-        # --- Visualization Setup ---
         f = Figure(size=(2560, 1440); fontsize=48)
         
         # Create observables for both Temperature and Time
@@ -401,15 +372,14 @@ function track_state_over_time_gpu(S_init, t_array, T_func, params::SimParams ;
         
         img = Observable(tuple_to_rgb.(S_host))
     
-    # Lift on BOTH observables to update the title dynamically
+        # Lift on BOTH observables to update the title dynamically
         dynamic_title = lift(inst_T, inst_time, my_safe_t) do myT, myt, myst
-        # %8.4f means: take up 8 total characters, with exactly 4 decimal places
         @sprintf("Time: %8.4f s  |  Temp: %7.2f °C  |  Δt_safe: %7.4f", myt, myT, myst)
         end
     
         ax = Axis(f[1,1], title=dynamic_title, aspect=DataAspect())
             image!(ax, img, interpolate=false) 
-        # Initialize the Makie video stream attached to your figure
+        # Initialize the Makie video stream attached to figure
         vstream = VideoStream(f, framerate=framerate, compression=1)
     end
 
@@ -454,20 +424,20 @@ function track_state_over_time_gpu(S_init, t_array, T_func, params::SimParams ;
         # Smart steps calculates the maximum velocity at every macro step 
         # to adaptively select Δt for the subsequent microsteps. 
         if smart_steps
-            # 1. Reset the single global tracker
+            # Reset the single global tracker
             AMDGPU.fill!(max_v_gpu, UInt32(0))
 
-            # 2. Dispatch the reduction kernel
+            # Dispatch the reduction kernel
             @roc groupsize=threads gridsize=blocks find_max_velocity_kernel!(max_v_gpu,
                                                                              S_d1, current_T,
                                                                              params)
             AMDGPU.synchronize()
 
-            # 3. Pull the UInt32 back to the CPU and translate it back to Float32
+            # Pull the UInt32 back to the CPU and translate it back to Float32
             max_v_uint = Array(max_v_gpu)[1]
             actual_max_v = reinterpret(Float32, max_v_uint)
 
-            # 4. Handle the edge case where nothing is moving (v = 0)
+            # Handle the edge case where nothing is moving (v = 0)
             if actual_max_v == 0.0f0
                 # If nothing wants to move, take the largest allowed macro step
                 Δt_safe = Δt_macro 
@@ -516,7 +486,7 @@ function track_state_over_time_gpu(S_init, t_array, T_func, params::SimParams ;
             @show 1 - exp(-max_rate * Δt_actual)
         end
 
-        # --- Calculate Stats on the GPU EVERY step ---
+        # --- Calculate stats on the GPU EVERY macro-step ---
         @roc groupsize=threads gridsize=blocks compute_local_stats_kernel!(
             S_d1, d_f_count, d_pb_count, d_gb_count
         )
@@ -546,7 +516,7 @@ function track_state_over_time_gpu(S_init, t_array, T_func, params::SimParams ;
         push!(tracked_diameter, avg_diameter)
 
         for _ in 1:num_micro_steps
-        # --- 1. NUCLEATION PHASE ---
+        # --- NUCLEATION PHASE ---
             AMDGPU.rand!(R_nuc)
             AMDGPU.rand!(R_seeds)
             T = Float32(T_func(current_time))
@@ -555,7 +525,7 @@ function track_state_over_time_gpu(S_init, t_array, T_func, params::SimParams ;
                 S_d1, R_nuc, R_seeds, Δt_actual, T, inv_kBT, params
             )
 
-            # --- 2. GROWTH PHASE (RED-BLACK CHECKERBOARD) ---
+            # --- GROWTH PHASE (RED-BLACK CHECKERBOARD) ---
             # RED PASS (parity = 0)
             # Reads from S_d1, calculates updates for Red pixels, writes to S_d2
             # Black pixels are copied over identically
@@ -609,7 +579,7 @@ function track_state_over_time_gpu(S_init, t_array, T_func, params::SimParams ;
     )
 
     if ! benchmark
-        # --- 3. Save Time-Series Results to CSV ---
+        # --- Save Time-Series Results to CSV ---
         results_file = joinpath(out_dir, "timeseries_results.csv")
         open(results_file, "w") do io
             # Write the header row
@@ -706,14 +676,14 @@ function initialize_real_microstructure(N::Int, M::Int, num_grains::Int; phase=1
     # Initialize an empty host array
     S_init = Array{Tuple{Int32, Int32}}(undef, N, M)
     
-    # 1. Generate random coordinates for the grain "seeds"
+    # Generate random coordinates for the grain "seeds"
     seed_x = rand(1:N, num_grains)
     seed_y = rand(1:M, num_grains)
     
-    # 2. Assign a random orientation (0, 10, ..., 90) and Phase 1 (Ferrite) to each seed
+    # Assign a random orientation (0, 10, ..., 90) and Phase 1 (Ferrite) to each seed
     seed_states = [(Int32(rand(0:10:90)), Int32(phase)) for _ in 1:num_grains]
     
-    # 3. Populate the grid using the closest seed 
+    # Populate the grid using the closest seed 
     Threads.@threads for i in 1:N
         for j in 1:M
             min_dist_sq = Inf
@@ -755,10 +725,10 @@ function compute_local_stats_kernel!(S, f_count, pb_count, gb_count)
     if i <= N && j <= M
         θ, p = S[i, j]
         
-        # 1. Map Ferrite count (1 if Ferrite, 0 otherwise)
+        # Map Ferrite count (1 if Ferrite, 0 otherwise)
         f_count[i, j] = ifelse(p == 1, Int32(1), Int32(0))
         
-        # 2. Map Boundary counts
+        # Map Boundary counts
         p_edges = Int32(0)
         g_edges = Int32(0)
         
@@ -829,13 +799,13 @@ function plot_simulation_results(csv_path::String)
     
     #display(f)
     
-    # 1. Extract the folder path from the CSV path
+    # Extract the folder path from the CSV path
     out_dir = dirname(csv_path)
     
-    # 2. Construct the full path for the new image
+    # Construct the full path for the new image
     img_path = joinpath(out_dir, "simulation_summary.png")
     
-    # 3. Save the figure. px_per_unit = 2 doubles the pixel density for high res
+    # Save the figure. px_per_unit = 3 triples the pixel density for high res
     save(img_path, f, px_per_unit = 3)
     println("Plot successfully saved to: $img_path")
     
@@ -853,10 +823,8 @@ function plot_temperature_dependence(csv_path::String)
     avg_diameter = Float32.(data[:, 5])
     
     # --- Visualization Setup ---
-    # We use a taller figure to accommodate two distinct rows
     f = Figure(size = (1200, 1000))
     
-    # Axis 1: Temperature vs. Time (Top row, spanning columns 1 and 2)
     ax1 = Axis(f[1, 1:2], 
                #title = "Thermal Profile",
                xlabel = "Time (s)", 
@@ -864,7 +832,6 @@ function plot_temperature_dependence(csv_path::String)
                
     lines!(ax1, time_s, temp_C, color = :black, linewidth = 3)
     
-    # Axis 2: Phase Evolution vs. Temperature (Bottom Left)
     ax2 = Axis(f[2, 1], 
                #title = "Phase Evolution vs. Temperature",
                xlabel = "Temperature (°C)", 
@@ -875,7 +842,7 @@ function plot_temperature_dependence(csv_path::String)
     lines!(ax2, temp_C, ferrite_frac, 
            color = time_s, colormap = :viridis, linewidth = 3)
     
-    # Axis 3: Grain Size vs. Temperature (Bottom Right)
+    # Grain Size vs. Temperature (Bottom Right)
     ax3 = Axis(f[2, 2], 
                #title = "Grain Growth vs. Temperature",
                xlabel = "Temperature (°C)", 
@@ -889,7 +856,6 @@ function plot_temperature_dependence(csv_path::String)
     
     #display(f)
     
-    # --- Save the High-Resolution PNG ---
     out_dir = dirname(csv_path)
     img_path = joinpath(out_dir, "temperature_dependence_summary.png")
     
